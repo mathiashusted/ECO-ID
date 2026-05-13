@@ -56,9 +56,46 @@ async function startServer() {
     }
   });
 
+  // --- Ollama Utility Endpoint ---
+  app.post("/api/ollama/hello", async (req, res) => {
+    const model = req.body?.model || "qwen3.6";
+    const baseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+
+    try {
+      const ollamaResponse = await fetch(`${baseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          prompt: "Hello world",
+          stream: false,
+        }),
+      });
+
+      if (!ollamaResponse.ok) {
+        const text = await ollamaResponse.text();
+        return res.status(502).json({
+          error: `Ollama request failed (${ollamaResponse.status}): ${text}`,
+        });
+      }
+
+      const data = await ollamaResponse.json() as { response?: string };
+      return res.json({
+        model,
+        prompt: "Hello world",
+        response: data.response || "",
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: error.message || "Failed to contact Ollama",
+      });
+    }
+  });
+
   // --- Static Files & Vite Integration ---
   if (isDev) {
     const vite = await createViteServer({
+      configLoader: "native",
       server: { middlewareMode: true },
       appType: "spa",
     });
@@ -67,7 +104,7 @@ async function startServer() {
     // Production: Serve from dist folder
     const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
-    app.get("/*", (req, res) => {
+    app.get("/{*path}", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
