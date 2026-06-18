@@ -17,7 +17,15 @@ export interface EntityResult {
   "Refined Entity Name": string;
   "Entity Type": string;
   "Resolved Name": string;
+  "Confidence Score": number;
+  "Resolution Category": "Exact Match" | "Synonym" | "Abbreviation" | "Corrected Spelling" | "Inferred" | "Ambiguous" | "Failed" | "Normalized Name";
+  "Error Taxonomy"?: string;
+  "Verification Status": "Verified" | "Unverified" | "Failed";
+  "Verification Method"?: string;
   "Validation Issues": string;
+  "Candidates"?: string;
+  "Is Ambiguous"?: boolean;
+  "Alternative Suggestions"?: string;
   "Pathways"?: string;
   "Function"?: string;
   "Cellular Component"?: string;
@@ -39,11 +47,25 @@ export interface EntityResult {
   "Processing Time (s)"?: number;
 }
 
+export interface EntityCandidate {
+  name: string;
+  id: string;
+  source: string;
+  confidence: number;
+  description?: string;
+}
+
 export interface GeminiApiResponse {
   corrected_name: string;
   entity_type: 'chemical' | 'protein' | 'gene' | 'unknown';
   synonyms: string[];
   resolved_name: string;
+  confidence: number;
+  resolution_category: "Exact Match" | "Synonym" | "Abbreviation" | "Corrected Spelling" | "Inferred" | "Ambiguous" | "Failed" | "Normalized Name";
+  error_taxonomy: "None" | "Misspelling" | "Synonym" | "Abbreviation" | "Obsolete Name" | "Casing/Punctuation" | "Greek Letter Conversion" | "Species-Specific" | "Multiple Hits" | "Other";
+  candidates?: EntityCandidate[];
+  is_ambiguous: boolean;
+  alternative_suggestions: string[];
   validation_issues: string[];
   pathways: string[];
   biological_function: string[];
@@ -80,4 +102,8 @@ export interface SessionState {
   apiProvider: ApiProvider;
   textAreaContent: string;
   fileName: string;
+  multiCandidateMode: boolean;
+  strictDeterminism?: boolean;
+  temperature?: number;
+  topP?: number;
 }

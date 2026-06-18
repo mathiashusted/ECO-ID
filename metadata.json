@@ -1,5 +1,8 @@
 {
-  "name": "ECO-ID",
-  "description": "A high-precision AI-driven tool for correcting, identifying, and annotating biological and chemical entities with multi-ontology support.",
-  "requestFramePermissions": []
+  "name": "Remix: ECO-ID V1.0 Revision for Frontiers with demo",
+  "description": "Precision Biological \u0026 Chemical Entity Resolution",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

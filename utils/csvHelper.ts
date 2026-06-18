@@ -7,7 +7,9 @@ export const generateAndDownloadCsv = (data: EntityResult[], filename: string): 
   }
 
   const headers: (keyof EntityResult)[] = [
-    "Input Entity", "Refined Entity Name", "Entity Type", "Resolved Name", "Validation Issues",
+    "Input Entity", "Refined Entity Name", "Entity Type", "Resolved Name", 
+    "Confidence Score", "Resolution Category", "Error Taxonomy", "Verification Status", "Verification Method",
+    "Candidates", "Validation Issues",
     "Pathways", "Function", "Cellular Component",
     "Ontology ID", "Ontology Term",
     "PubChem CID", "ChEMBL ID", "KEGG", "UniProt", "RefSeq", "Ensembl", "InterPro",
