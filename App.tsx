@@ -24,13 +24,25 @@ import {
   Users
 } from 'lucide-react';
 import { EntityType, EntityResult, ApiProvider, OntologyType, SessionState } from './types';
-import { fetchEntityInfo } from './services/geminiService';
+import { fetchEntityInfo, EXPERIMENT_ARM } from './services/geminiService';
 import { generateAndDownloadCsv } from './utils/csvHelper';
-import { verifyEntity } from './services/verificationService';
 import { DEMO_ENTITIES_DATA } from './data/demoData';
 
 type AnalysisPhase = 'idle' | 'initial' | 'deep_search_pending' | 'deep_searching' | 'complete';
 type AppTab = 'setup' | 'execution' | 'results';
+type AiMode = 'cloud' | 'local';
+
+const AI_PROVIDERS: Record<AiMode, ApiProvider[]> = {
+    cloud: ["Google Gemini", "OpenAI", "Groq", "Anthropic", "Cohere", "Mistral AI", "Perplexity", "Together AI"],
+    local: ["gemma4:e2b", "gemma4:e4b", "phi4-mini:3.8b", "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S"],
+};
+
+type LocalModelStatus = 'idle' | 'checking' | 'available' | 'missing' | 'offline';
+
+const selectAiMode = (mode: AiMode, setAiMode: React.Dispatch<React.SetStateAction<AiMode>>, setApiProvider: React.Dispatch<React.SetStateAction<ApiProvider>>) => {
+    setAiMode(mode);
+    setApiProvider(prev => AI_PROVIDERS[mode].includes(prev) ? prev : AI_PROVIDERS[mode][0]);
+};
 
 // --- UI Components ---
 
@@ -364,7 +376,15 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => (
     </motion.div>
 );
 
-const ApiKeyStatus: React.FC<{ provider: ApiProvider; apiKey: string }> = ({ provider, apiKey }) => {
+const ApiKeyStatus: React.FC<{ provider: ApiProvider; apiKey: string; aiMode: AiMode; localModelStatus: LocalModelStatus }> = ({ provider, apiKey, aiMode, localModelStatus }) => {
+    if (aiMode === 'local') {
+        const label = localModelStatus === 'checking' ? 'Checking Ollama' : localModelStatus === 'available' ? 'Model on Disk' : localModelStatus === 'missing' ? 'Model Missing' : localModelStatus === 'offline' ? 'Ollama Offline' : 'Local AI';
+        const style = localModelStatus === 'available' ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : localModelStatus === 'missing' ? 'text-amber-700 bg-amber-50 border border-amber-200' : localModelStatus === 'offline' ? 'text-rose-700 bg-rose-50 border border-rose-200' : 'text-slate-700 bg-slate-100 border border-slate-200';
+        const Icon = localModelStatus === 'available' ? CheckCircle2 : AlertCircle;
+
+        return <span className={`px-3 py-1 text-xs font-semibold rounded-full flex items-center ${style}`}><Icon className={`h-3 w-3 mr-1 ${localModelStatus === 'checking' ? 'animate-pulse' : ''}`} /> {label}</span>;
+    }
+
     if (apiKey) return <span className="px-3 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full flex items-center"><CheckCircle2 className="h-3 w-3 mr-1" /> User Key Active</span>;
     if (provider === 'Google Gemini') return <span className="px-3 py-1 text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-full flex items-center"><Database className="h-3 w-3 mr-1" /> Environment Default</span>;
     return <span className="px-3 py-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full flex items-center"><AlertCircle className="h-3 w-3 mr-1" /> Key Required</span>;
@@ -395,16 +415,63 @@ const App: React.FC = () => {
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<AppTab>('setup');
     const [keyAlert, setKeyAlert] = useState<string | null>(null);
+    const [aiMode, setAiMode] = useState<AiMode>('cloud');
+    const [localModelStatus, setLocalModelStatus] = useState<LocalModelStatus>('idle');
 
     const runningRef = useRef(false);
     const logContainerRef = useRef<HTMLDivElement>(null);
-    const apiProviders: ApiProvider[] = ["Google Gemini", "OpenAI", "Groq", "Anthropic", "Cohere", "Mistral AI", "Perplexity", "Together AI"];
     const ontologies: OntologyType[] = ["None", "Gene Ontology", "ChEBI", "MeSH"];
+    const apiProviders = AI_PROVIDERS[aiMode];
+    const isLocalAiMode = aiMode === 'local';
 
     // Effects
     useEffect(() => {
         if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }, [logs]);
+    // This is the logic hnadling the local AI
+    useEffect(() => {
+        if (!isLocalAiMode) {
+            setLocalModelStatus('idle');
+            return;
+        }
+
+        let cancelled = false;
+        const controller = new AbortController();
+
+        const checkLocalModel = async () => {
+            setLocalModelStatus('checking');
+
+            try {
+                const response = await fetch(`/api/ollama/model-status?model=${encodeURIComponent(apiProvider)}`, {
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    if (!cancelled) {
+                        setLocalModelStatus(response.status === 404 ? 'missing' : 'offline');
+                    }
+                    return;
+                }
+
+                const data = await response.json();
+                if (!cancelled) {
+                    setLocalModelStatus(data.available ? 'available' : 'missing');
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setLocalModelStatus('offline');
+                }
+            }
+        };
+
+        checkLocalModel();
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
+    }, [apiProvider, isLocalAiMode]);
 
     // Callbacks and handlers
     const addLog = useCallback((message: string) => {
@@ -417,6 +484,7 @@ const App: React.FC = () => {
             const sessionState: SessionState = {
                 entityList, entityType, backgroundInfo, ontology, results, logs,
                 analysisPhase, apiProvider, textAreaContent, fileName, multiCandidateMode,
+                aiMode,
                 strictDeterminism, temperature, topP
             };
             localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionState));
@@ -440,6 +508,7 @@ const App: React.FC = () => {
                 setLogs(savedState.logs);
                 setAnalysisPhase(savedState.analysisPhase as AnalysisPhase);
                 setApiProvider(savedState.apiProvider);
+                setAiMode(savedState.aiMode ?? (AI_PROVIDERS.local.includes(savedState.apiProvider) ? 'local' : 'cloud'));
                 setTextAreaContent(savedState.textAreaContent);
                 setFileName(savedState.fileName);
                 setMultiCandidateMode(savedState.multiCandidateMode || false);
@@ -581,66 +650,26 @@ const App: React.FC = () => {
             entityType, 
             backgroundInfo, 
             ontology, 
-            isDeepSearch,
-            strictDeterminism,
-            temperature,
-            topP
+            isDeepSearch
         );
         
-        // Primary Verification
-        const verification = await verifyEntity(apiResponse.identifiers, apiResponse.entity_type);
         const endTime = performance.now();
         const procTime = (endTime - startTime) / 1000;
 
-        const mainResult: EntityResult = {
+        // New schema for the test runs
+        return [{
             "Input Entity": entity,
-            "Refined Entity Name": apiResponse.corrected_name !== entity ? apiResponse.corrected_name : "",
             "Entity Type": apiResponse.entity_type,
-            "Resolved Name": apiResponse.resolved_name,
-            "Confidence Score": apiResponse.confidence,
-            "Resolution Category": apiResponse.resolution_category,
-            "Error Taxonomy": apiResponse.error_taxonomy,
-            "Verification Status": verification.status,
-            "Verification Method": verification.method,
-            "Validation Issues": apiResponse.validation_issues.join('; '),
-            "Candidates": apiResponse.candidates?.map(c => `${c.name} (${c.id})`).join(', '),
-            "Is Ambiguous": apiResponse.is_ambiguous,
-            "Alternative Suggestions": apiResponse.alternative_suggestions?.join(', '),
-            "Pathways": apiResponse.pathways.join('; '),
-            "Function": apiResponse.biological_function.join('; '),
-            "Cellular Component": apiResponse.cellular_component.join('; '),
-            "Ontology ID": apiResponse.ontology_id,
-            "Ontology Term": apiResponse.ontology_term,
-            ...apiResponse.identifiers,
-            ...apiResponse.links,
+            "Resolved Name": apiResponse.normalized_name,
+            "Status": apiResponse.status,
+            "Identifier": apiResponse.identifier,
+            "Arm": EXPERIMENT_ARM,
+            // Abstentions count as unresolved here
+            "Validation Issues": apiResponse.status === "abstain" ? "LLM abstained" : "",
             "Processing Time (s)": procTime,
-        };
-
-        if (!multiCandidateMode || !apiResponse.candidates || apiResponse.candidates.length <= 1) {
-            return [mainResult];
-        }
-
-        // Return primary + filtered candidates
-        const extraResults: EntityResult[] = apiResponse.candidates
-            .filter(c => c.name !== apiResponse.resolved_name && c.confidence > 0.3)
-            .map(c => ({
-                "Input Entity": entity,
-                "Refined Entity Name": apiResponse.corrected_name !== entity ? apiResponse.corrected_name : "",
-                "Entity Type": apiResponse.entity_type,
-                "Resolved Name": c.name,
-                "Confidence Score": c.confidence,
-                "Verification Status": "Unverified",
-                "Verification Method": "N/A (Candidate)",
-                "Validation Issues": "Alternative hit",
-                "Candidates": "Alternative Resolution",
-                // Note: identifiers for candidates are often just IDs, we try to map them
-                ...(c.source.toLowerCase().includes('uniprot') ? { "UniProt": c.id } : {}),
-                ...(c.source.toLowerCase().includes('pubchem') ? { "PubChem CID": c.id } : {}),
-                ...(c.source.toLowerCase().includes('chembl') ? { "ChEMBL ID": c.id } : {}),
-                "Processing Time (s)": procTime,
-            } as EntityResult));
-
-        return [mainResult, ...extraResults];
+            "Eval Count": apiResponse.eval_count,
+            "Tokens/s": apiResponse.tokens_per_second,
+        } as EntityResult];
     };
 
     const runAnalysis = async (list: string[], isDeepSearch: boolean) => {
@@ -699,7 +728,7 @@ const App: React.FC = () => {
 
     const handleStart = async () => {
         if (entityList.length === 0) { addLog("Error: Input list is empty."); return; }
-        if (apiProvider !== 'Google Gemini' && !apiKey) { addLog(`Error: API credentials missing for ${apiProvider}.`); return; }
+        if (!isLocalAiMode && apiProvider !== 'Google Gemini' && !apiKey) { addLog(`Error: API credentials missing for ${apiProvider}.`); return; }
         
         setKeyAlert(null);
         setActiveTab('execution');
@@ -712,8 +741,9 @@ const App: React.FC = () => {
         const newResults = await runAnalysis(entityList, false);
         
         const runId = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        generateAndDownloadCsv(newResults, `eco-id-results-${runId}.csv`);
-        addLog(`Report generated: eco-id-results-${runId}.csv`);
+        const modelName = apiProvider.replace(/[/:]/g, '_'); // e.g. "gemma4:e4b" -> "gemma4_e4b"
+        generateAndDownloadCsv(newResults, `eco-id-results-${EXPERIMENT_ARM}-${modelName}-${runId}.csv`);
+        addLog(`Report generated: eco-id-results-${EXPERIMENT_ARM}-${modelName}-${runId}.csv`);
         
         const failedEntities = newResults.filter(r => r["Validation Issues"]);
         if (failedEntities.length > 0 && runningRef.current) {
@@ -815,7 +845,7 @@ const App: React.FC = () => {
                                 <div>
                                     <p className="text-xs text-slate-400 mb-1">Active Provider</p>
                                     <p className="text-sm font-bold text-slate-700">
-                                        {isDemoMode ? "Research Demo (Simulated)" : apiProvider}
+                                        {isDemoMode ? "Research Demo (Simulated)" : isLocalAiMode ? `Local AI · ${apiProvider}` : apiProvider}
                                     </p>
                                 </div>
                                 <div>
@@ -826,7 +856,7 @@ const App: React.FC = () => {
                                             Demo Active
                                         </span>
                                     ) : (
-                                        <ApiKeyStatus provider={apiProvider} apiKey={apiKey} />
+                                        <ApiKeyStatus provider={apiProvider} apiKey={apiKey} aiMode={aiMode} localModelStatus={localModelStatus} />
                                     )}
                                 </div>
                                 <div className="pt-2 flex space-x-2">
@@ -961,6 +991,33 @@ const App: React.FC = () => {
                                                 API Configuration
                                             </h3>
                                             <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">AI Mode</label>
+                                                    <div className="inline-flex w-full rounded-full bg-slate-100 p-1 border border-slate-200">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => selectAiMode('cloud', setAiMode, setApiProvider)}
+                                                            className={`flex-1 rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                                                aiMode === 'cloud'
+                                                                    ? 'bg-white text-indigo-700 shadow-sm'
+                                                                    : 'text-slate-500 hover:text-slate-700'
+                                                            }`}
+                                                        >
+                                                            Cloud AI
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => selectAiMode('local', setAiMode, setApiProvider)}
+                                                            className={`flex-1 rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                                                                aiMode === 'local'
+                                                                    ? 'bg-white text-indigo-700 shadow-sm'
+                                                                    : 'text-slate-500 hover:text-slate-700'
+                                                            }`}
+                                                        >
+                                                            Local AI
+                                                        </button>
+                                                    </div>
+                                                </div>
                                                 <div>
                                                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Provider</label>
                                                     <select 
@@ -977,8 +1034,13 @@ const App: React.FC = () => {
                                                         type="password" 
                                                         value={apiKey} 
                                                         onChange={e => setApiKey(e.target.value)}
-                                                        placeholder={apiProvider === 'Google Gemini' ? 'Using environment key...' : 'Enter credentials'}
-                                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium"
+                                                        disabled={isLocalAiMode}
+                                                        placeholder={isLocalAiMode ? 'Not needed in local AI mode' : apiProvider === 'Google Gemini' ? 'Using environment key...' : 'Enter credentials'}
+                                                        className={`w-full px-4 py-2.5 rounded-xl transition-all font-medium ${
+                                                            isLocalAiMode
+                                                                ? 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed'
+                                                                : 'bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+                                                        }`}
                                                     />
                                                 </div>
                                             </div>

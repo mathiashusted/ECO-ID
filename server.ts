@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT || 3000;
-  const isDev = process.env.NODE_ENV === "development";
+  const isDev = process.env.NODE_ENV === "development" || process.env.npm_lifecycle_event === "dev";
 
   app.use(cors());
   app.use(express.json());
@@ -100,7 +100,7 @@ async function startServer() {
   }
 
   // --- AI Provider Endpoints ---
-  app.get("/api/debug-env", (req, res) => {
+  app.get("/api/debug-env", (req: any, res: any) => {
     const keys = Object.keys(process.env).filter(k => 
       k.toUpperCase().includes("KEY") || 
       k.toUpperCase().includes("API") || 
@@ -126,11 +126,45 @@ async function startServer() {
     res.json({ info });
   });
 
-  app.post("/api/ai/proxy", async (req, res) => {
-    const { provider, apiKey, prompt, strictDeterminism, temperature, topP } = req.body;
-    const isStrict = strictDeterminism !== false;
-    const tempVal = isStrict ? 0 : (temperature ?? 0);
-    const topPVal = isStrict ? 0 : (topP ?? 0);
+  app.get("/api/ollama/model-status", async (req: any, res: any) => {
+    const model = typeof req.query.model === "string" ? req.query.model.trim() : "";
+
+    if (!model) {
+      return res.status(400).json({ available: false, error: "Model name is required." });
+    }
+
+    try {
+      // Get list of models
+      const response = await fetch("http://127.0.0.1:11434/api/tags");
+
+      if (!response.ok) {
+        return res.status(502).json({ available: false, error: `Ollama API returned ${response.status}.` });
+      }
+
+      const data = await response.json();
+      const models = Array.isArray(data?.models) ? data.models : [];
+      const normalizedModel = model.toLowerCase();
+
+      const available = models.some((entry: any) => {
+        const candidateNames = [entry?.name, entry?.model, entry?.name?.split("/").pop()]
+          .filter(Boolean)
+          .map((value: string) => value.toLowerCase());
+
+        return candidateNames.includes(normalizedModel);
+      });
+
+      return res.json({ available, model });
+    } catch (error) {
+      console.error("Ollama model status error:", error);
+      return res.status(503).json({ available: false, error: "Ollama is not reachable." });
+    }
+  });
+
+  app.post("/api/ai/proxy", async (req: any, res: any) => {
+    const { provider, apiKey, prompt } = req.body;
+    // Variables temperature and seed are hard coded for the test runs to ensure controlled conditions
+    const TEMPERATURE = 0;
+    const SEED = 100;
 
     try {
       if (provider === "Google Gemini") {
@@ -145,20 +179,14 @@ async function startServer() {
         const config: any = {
           responseMimeType: "application/json",
           responseSchema: req.body.responseSchema,
+          temperature: TEMPERATURE,
+          seed: SEED,
         };
 
-        if (isStrict) {
-          config.temperature = 0;
-          config.topP = 0;
-        } else {
-          config.temperature = tempVal;
-          config.topP = topPVal;
-        }
-
         // Resilient calling strategy: 
-        // 1. Candidate models: start with gemini-2.5-flash, fallback to gemini-2.0-flash or gemini-1.5-flash if 503/high-demand persists
+        // 1. Candidate models: I changed this to Gemini 3.6 Flash which is available freely as an API, falling back to gemini-flash-latest instead of older, potentially non-existent models
         // 2. Exponential backoff retry loop per candidate model
-        const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        const candidateModels = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash-lite"];
         const maxRetries = 3;
         let lastError: any = null;
         let response: any = null;
@@ -170,7 +198,7 @@ async function startServer() {
               response = await ai.models.generateContent({
                 model: modelToCall,
                 contents: prompt,
-                config: config,
+                config: { ...config, abortSignal: AbortSignal.timeout(30000) },
               });
               
               if (response && response.text) {
@@ -178,7 +206,7 @@ async function startServer() {
                 break; // Got response, exit attempt loop
               }
             } catch (error: any) {
-              lastError = error;
+              if (!lastError) lastError = error; // keep the first, most relevant failure and not the last fallback's
               let errMsg = error.message || String(error);
               
               // Clean/Extract from JSON string if needed
@@ -275,8 +303,8 @@ async function startServer() {
           model: "gpt-4o",
           messages: [{ role: "user", content: prompt }],
           response_format: { type: "json_object" },
-          temperature: tempVal,
-          top_p: topPVal,
+          temperature: TEMPERATURE,
+          seed: SEED,
         });
         return res.json(JSON.parse(response.choices[0].message.content || "{}"));
       }
@@ -290,9 +318,7 @@ async function startServer() {
           model: "claude-3-5-sonnet-20240620",
           max_tokens: 4096,
           messages: [{ role: "user", content: prompt + "\n\nRespond ONLY with a valid JSON object." }],
-          temperature: tempVal,
-          // Anthropic doesn't allow top_p = 0. Use undefined when strict (locked is deterministic anyway with temp=0).
-          top_p: isStrict ? undefined : (topPVal > 0 ? topPVal : undefined),
+          temperature: TEMPERATURE, // Anthropic has no seed parameter
         });
         const content = response.content[0].type === 'text' ? response.content[0].text : "";
         return res.json(JSON.parse(content));
@@ -307,8 +333,8 @@ async function startServer() {
           model: "llama-3.1-70b-versatile",
           messages: [{ role: "user", content: prompt }],
           response_format: { type: "json_object" },
-          temperature: tempVal,
-          top_p: topPVal,
+          temperature: TEMPERATURE,
+          seed: SEED,
         });
         return res.json(JSON.parse(response.choices[0].message.content || "{}"));
       }

@@ -10,13 +10,20 @@ export type ApiProvider =
   | "Cohere" 
   | "Mistral AI"
   | "Perplexity"
-  | "Together AI";
+  | "Together AI"
+  | "gemma4:e2b"
+  | "gemma4:e4b"
+  | "phi4-mini:3.8b"
+  | "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S";
 
 export interface EntityResult {
   "Input Entity": string;
   "Refined Entity Name": string;
   "Entity Type": string;
   "Resolved Name": string;
+  "Status"?: string;
+  "Identifier"?: string;
+  "Arm"?: string;
   "Confidence Score": number;
   "Resolution Category": "Exact Match" | "Synonym" | "Abbreviation" | "Corrected Spelling" | "Inferred" | "Ambiguous" | "Failed" | "Normalized Name";
   "Error Taxonomy"?: string;
@@ -45,50 +52,18 @@ export interface EntityResult {
   "KEGG Link"?: string;
   "UniProt Link"?: string;
   "Processing Time (s)"?: number;
-}
-
-export interface EntityCandidate {
-  name: string;
-  id: string;
-  source: string;
-  confidence: number;
-  description?: string;
+  "Eval Count"?: number;
+  "Tokens/s"?: number;
 }
 
 export interface GeminiApiResponse {
-  corrected_name: string;
-  entity_type: 'chemical' | 'protein' | 'gene' | 'unknown';
-  synonyms: string[];
-  resolved_name: string;
-  confidence: number;
-  resolution_category: "Exact Match" | "Synonym" | "Abbreviation" | "Corrected Spelling" | "Inferred" | "Ambiguous" | "Failed" | "Normalized Name";
-  error_taxonomy: "None" | "Misspelling" | "Synonym" | "Abbreviation" | "Obsolete Name" | "Casing/Punctuation" | "Greek Letter Conversion" | "Species-Specific" | "Multiple Hits" | "Other";
-  candidates?: EntityCandidate[];
-  is_ambiguous: boolean;
-  alternative_suggestions: string[];
-  validation_issues: string[];
-  pathways: string[];
-  biological_function: string[];
-  cellular_component: string[];
-  ontology_id?: string;
-  ontology_term?: string;
-  identifiers: {
-    "PubChem CID"?: string;
-    "ChEMBL ID"?: string;
-    "KEGG"?: string;
-    "UniProt"?: string;
-    "RefSeq"?: string;
-    "Ensembl"?: string;
-    "InterPro"?: string;
-    "InChIKey"?: string;
-    "SMILES"?: string;
-  };
-  links: {
-    "PubChem Link"?: string;
-    "ChEMBL Link"?: string;
-    "KEGG Link"?: string;
-    "UniProt Link"?: string;
-  };
+  normalized_name: string;
+  entity_type: 'chemical' | 'gene' | '';
+  status: 'resolved' | 'abstain';
+  identifier?: string; // Only for arm A
+  // Only set for Ollama calls
+  eval_count?: number;
+  tokens_per_second?: number;
 }
 
 export interface SessionState {
@@ -103,6 +78,7 @@ export interface SessionState {
   textAreaContent: string;
   fileName: string;
   multiCandidateMode: boolean;
+  aiMode?: "cloud" | "local";
   strictDeterminism?: boolean;
   temperature?: number;
   topP?: number;

@@ -1,6 +1,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiApiResponse, ApiProvider, OntologyType } from "../types";
 
+// Thesis experiment arm - will be changed directly from here and affects the prompt as well as the schema:
+// A = LLM-as-DB, B = hybrid
+export const EXPERIMENT_ARM = "B" as "A" | "B";
+
 // --- Gemini-Specific Implementation ---
 
 const getGeminiClient = (apiKey?: string) => {
@@ -14,9 +18,13 @@ const getGeminiClient = (apiKey?: string) => {
 const getResponseSchema = (ontology: OntologyType) => {
     const schema = {
         type: Type.OBJECT,
-        properties: {
+        /*properties: {
             corrected_name: { type: Type.STRING, description: "The spell-corrected name of the entity." },
-            entity_type: { type: Type.STRING, description: "The determined type: 'chemical', 'protein', 'gene', or 'unknown'." },
+            entity_type: {
+                type: Type.STRING,
+                enum: ["chemical", "gene"],
+                description: "The determined type of the entity."
+            },
             synonyms: { type: Type.ARRAY, items: { type: Type.STRING }, description: "A list of common synonyms." },
             resolved_name: { type: Type.STRING, description: "The most common or official name for the entity." },
             confidence: { type: Type.NUMBER, description: "Confidence score (0.0 to 1.0) for this resolution." },
@@ -81,15 +89,30 @@ const getResponseSchema = (ontology: OntologyType) => {
                 items: { type: Type.STRING },
                 description: "Array of up to three potential alternative matches or suggestions when the name is ambiguous and maps to multiple targets."
             }
+        },*/
+        properties: {
+            normalized_name: { type: Type.STRING, description: "The normalized name of the entity" },
+            entity_type: {
+                type: Type.STRING,
+                enum: ["chemical", "gene"],
+                description: "The determined type of the entity."
+            },
+            status: {
+                type: Type.STRING,
+                enum: ["resolved", "abstain"],
+                description: "The resolution status of the LLM. If the entity could not be resolved, it will abstain."
+            },
         },
-        required: ["corrected_name", "entity_type", "synonyms", "resolved_name", "confidence", "resolution_category", "error_taxonomy", "is_ambiguous", "alternative_suggestions", "validation_issues", "pathways", "biological_function", "cellular_component", "identifiers", "links"]
+        required: ["normalized_name", "entity_type", "status"]
     };
 
-    if (ontology !== 'None') {
-        schema.properties['ontology_id'] = { type: Type.STRING, nullable: true, description: `The primary ID from the ${ontology} database (e.g., GO:0008150, CHEBI:16236).` };
-        schema.properties['ontology_term'] = { type: Type.STRING, nullable: true, description: `The corresponding term name from ${ontology}.` };
+    // Arm A extra fields
+    if (EXPERIMENT_ARM === "A") {
+        const { status, ...rest } = schema.properties;
+        schema.properties = { ...rest, identifier: { type: Type.STRING }, status } as any;
+        schema.required = ["normalized_name", "entity_type", "identifier", "status"];
     }
-    
+
     return schema;
 };
 
@@ -139,10 +162,11 @@ const createPrompt = (
     ontology: OntologyType,
     isDeepSearch: boolean
 ): string => {
-    const ontologyInstruction = ontology !== 'None' 
+    const ontologyInstruction = ontology !== 'None'
         ? `Additionally, find its corresponding term and ID from the ${ontology} database.`
         : '';
-    
+
+
     if (isDeepSearch) {
         return `
         You are an expert research assistant performing a deep, exhaustive search for a biological or chemical entity. A previous quick search failed to find it. You must now try harder, using alternative search strategies.
@@ -150,7 +174,6 @@ const createPrompt = (
         You MUST respond ONLY with a valid JSON object that conforms to the provided schema.
 
         Entity Name to Analyze: "${originalName}"
-        User Provided Type Hint: "${entityTypeHint}"
         Additional Background Context: "${backgroundInfo || 'None provided.'}"
 
         Perform the following actions with maximum effort:
@@ -172,7 +195,7 @@ const createPrompt = (
            - "Greek Letter Conversion": e.g., "alpha" to "a".
            - "Species-Specific": Name refers to a specific species.
            - "Multiple Hits": Ambiguous name with multiple candidates.
-        4. Determine the entity's type (e.g., 'chemical', 'protein', 'gene'). Prioritize the user's hint but correct it if it's clearly wrong.
+        4. Determine the entity's type, which MUST be either 'chemical' or 'gene'. Prioritize the user's hint but correct it if it's clearly wrong.
         5. Provide a confidence score (0.0 to 1.0) based on how certain you are of this resolution for the primary 'resolved_name'.
         6. If the name is ambiguous (e.g., 'PLD alpha' which could be various genes), list ALL plausible candidates in the 'candidates' array, ordered by confidence. Include the primary resolved candidate here as well if it belongs in the list.
         7. If an entity name maps to multiple isoforms, genes, or distinct chemical structures, set 'is_ambiguous' to true and list up to three potential matches in 'alternative_suggestions' instead of choosing one arbitrarily. Otherwise, set 'is_ambiguous' to false and keep 'alternative_suggestions' as an empty array [].
@@ -189,20 +212,20 @@ const createPrompt = (
         Return your findings in the specified JSON format.
         `;
     }
-    return `
+    /*return `
     You are an expert chemist and biologist acting as a data aggregation service. Your task is to analyze a given entity name, correct it, and find its identifiers, pathways, function, and cellular location from scientific databases.
 
     You MUST respond ONLY with a valid JSON object that conforms to the provided schema. Do not include any explanatory text, markdown formatting, or anything outside the JSON object.
 
     Entity Name to Analyze: "${originalName}"
-    User Provided Type Hint: "${entityTypeHint}"
+    ${typeHintLine}
     Additional Background Context: "${backgroundInfo || 'None provided.'}"
 
     Based on the entity name and context, perform the following actions:
     1. Correct any spelling errors in the entity name.
     2. Categorize the resolution ("resolution_category") using the following definitions: "Exact Match", "Synonym", "Abbreviation", "Corrected Spelling", "Inferred", "Ambiguous".
     3. Identify the error type ("error_taxonomy") from: "None", "Misspelling", "Synonym", "Abbreviation", "Obsolete Name", "Casing/Punctuation", "Greek Letter Conversion", "Species-Specific", "Multiple Hits".
-    4. Determine the entity's type (e.g., 'chemical', 'protein', 'gene').
+    4. Determine the entity's type, which MUST be either 'chemical' or 'gene'.
     5. Provide a confidence score (0.0 to 1.0) based on how certain you are of this resolution for the primary 'resolved_name'.
     6. If the name is ambiguous, list ALL plausible candidates in the 'candidates' array, ordered by confidence.
     7. If an entity name maps to multiple isoforms, genes, or distinct chemical structures, set 'is_ambiguous' to true and list up to three potential matches in 'alternative_suggestions' instead of choosing one arbitrarily. Otherwise, set 'is_ambiguous' to false and keep 'alternative_suggestions' as an empty array [].
@@ -217,8 +240,53 @@ const createPrompt = (
     16. Ensure all data is sourced from high-quality, peer-reviewed databases and cross-validated.
 
     Return your findings in the specified JSON format.
-    `;
+    `;*/
+    if (EXPERIMENT_ARM === "A") {
+        return `
+    Your task is biomedical entity normalization. You will receive an input that may be misspelled, abbreviated or contain other sorts of noise of a chemical compound or human gene. You MUST return the normalized name of the entity: for chemicals the standard compound name, for genes the HGNC approved symbol. If you cannot identify the input, set normalized_name to "" and status to "abstain". Additionally, return its identifier: for genes the HGNC ID (format HGNC:[number]), for chemicals the PubChem CID (an integer).
+
+    Respond ONLY in the following JSON format:
+    {"normalized_name": string, "entity_type": "chemical" | "gene", "identifier": string, "status": "resolved" | "abstain"}
+    Input: "${originalName}"
+
+    `
+    }
+    return `
+    Your task is biomedical entity normalization. You will receive an input that may be misspelled, abbreviated or contain other sorts of noise of a chemical compound or human gene. You MUST return the normalized name of the entity: for chemicals the standard compound name, for genes the HGNC approved symbol. If you cannot identify the input, set normalized_name to "" and status to "abstain".
+
+    Respond ONLY in the following JSON format:
+    {"normalized_name": string, "entity_type": "chemical" | "gene", "status": "resolved" | "abstain"}
+    Input: "${originalName}"
+
+    `
 };
+
+const LOCAL_OLLAMA_MODELS = new Set(["gemma4:e2b", "gemma4:e4b", "phi4-mini:3.8b", "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S"]);
+
+// Ollama's structured outputs want a plain JSON Schema (lowercase "type" strings),
+// while getResponseSchema() returns Gemini's dialect (Type.OBJECT, Type.STRING, ...).
+// Both use the same field names, so just lowercase the enum values recursively.
+const toJsonSchema = (node: any): any =>
+    Array.isArray(node) ? node.map(toJsonSchema)
+    : node && typeof node === "object" ? Object.fromEntries(
+        Object.entries(node).map(([k, v]) => [k, k === "type" ? String(v).toLowerCase() : toJsonSchema(v)])
+      )
+    : node;
+
+const parseMaybeJson = (value: string) => {
+    const trimmed = value.trim();
+    const cleaned = trimmed.replace(/^```json\s*|\s*```$/g, "");
+    return JSON.parse(cleaned);
+};
+
+// Providers without schema enforcement (OpenAI, Groq, Anthropic) can omit fields.
+// A response with missing fields counts as an abstention rather than falling back to the input name.
+const normalizeApiResponse = (raw: any): GeminiApiResponse => ({
+    normalized_name: raw?.normalized_name ?? "",
+    entity_type: raw?.entity_type ?? "",
+    status: raw?.status ?? "abstain",
+    identifier: raw?.identifier,
+});
 
 
 export const fetchEntityInfo = async (
@@ -228,12 +296,39 @@ export const fetchEntityInfo = async (
     entityTypeHint: string,
     backgroundInfo: string,
     ontology: OntologyType,
-    isDeepSearch: boolean,
-    strictDeterminism: boolean = true,
-    temperature: number = 0,
-    topP: number = 0
+    isDeepSearch: boolean
 ): Promise<GeminiApiResponse> => {
     const prompt = createPrompt(originalName, entityTypeHint, backgroundInfo, ontology, isDeepSearch);
+
+    if (LOCAL_OLLAMA_MODELS.has(provider)) {
+        const response = await fetch("http://127.0.0.1:11434/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                model: provider,
+                stream: false,
+                format: toJsonSchema(getResponseSchema(ontology)),
+                options: { temperature: 0, seed: 100, num_ctx: 4096 }, // The option parameters are hard coded for test runs
+                messages: [{ role: "user", content: prompt }],
+                think: false,
+                keep_alive: "30m"
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Ollama request failed: ${errorText || response.status}`);
+        }
+
+        const data = await response.json();
+
+        const parsed = parseMaybeJson(data?.message?.content || data?.response || "{}");
+        return {
+            ...normalizeApiResponse(parsed),
+            eval_count: data.eval_count,
+            tokens_per_second: data.eval_count / (data.eval_duration / 1e9),
+        };
+    }
 
     // Call backend proxy for all providers (including Gemini) to shield keys and secure requests
     try {
@@ -244,10 +339,7 @@ export const fetchEntityInfo = async (
                 provider,
                 apiKey,
                 prompt,
-                responseSchema: getResponseSchema(ontology),
-                strictDeterminism,
-                temperature,
-                topP
+                responseSchema: getResponseSchema(ontology)
             }),
         });
 
@@ -256,7 +348,8 @@ export const fetchEntityInfo = async (
             throw new Error(errorData.error || `Server error: ${response.status}`);
         }
 
-        return await response.json() as GeminiApiResponse;
+        const parsed = await response.json();
+        return normalizeApiResponse(parsed);
     } catch (error) {
         console.error(`Error calling ${provider} via proxy:`, error);
         throw error;

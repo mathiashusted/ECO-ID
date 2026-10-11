@@ -19,6 +19,7 @@
     "groq-sdk": "^0.37.0",
     "lucide-react": "^0.575.0",
     "motion": "^12.34.3",
+    "ollama": "^0.6.3",
     "openai": "^6.24.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -27,6 +28,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

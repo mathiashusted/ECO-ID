@@ -32,6 +32,34 @@ export const verifyUniProtId = async (id: string): Promise<VerificationResult> =
 };
 
 /**
+ * Verifies a HGNC ID against the HGNC REST API.
+ */
+export const verifyHGNCId = async (id: string): Promise<VerificationResult> => {
+  if (!id) return { verified: false, status: "Unverified", method: "HGNC API" };
+
+  try {
+    const response = await fetch(`https://rest.genenames.org/fetch/hgnc_id/${id}`, { headers: { Accept: "application/json" } });
+    if (response.ok) {
+      const data = await response.json();
+      const doc = data.response?.docs?.[0];
+      if (doc) {
+        const primaryName = doc.symbol || id;
+        return {
+          verified: true,
+          status: "Verified",
+          method: "HGNC API",
+          details: `Confirmed: ${primaryName}`
+        };
+      }
+    }
+    return { verified: false, status: "Failed", method: "HGNC API", details: "ID not found in HGNC" };
+  } catch (error) {
+    console.error("HGNC Verification Error:", error);
+    return { verified: false, status: "Unverified", method: "HGNC API", details: "Network Error" };
+  }
+};
+
+/**
  * Verifies a PubChem CID against the PubChem PUG REST API.
  */
 export const verifyPubChemId = async (cid: string | number): Promise<VerificationResult> => {

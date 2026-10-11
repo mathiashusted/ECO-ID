@@ -7,15 +7,17 @@ export const generateAndDownloadCsv = (data: EntityResult[], filename: string): 
   }
 
   const headers: (keyof EntityResult)[] = [
-    "Input Entity", "Refined Entity Name", "Entity Type", "Resolved Name", 
-    "Confidence Score", "Resolution Category", "Error Taxonomy", "Verification Status", "Verification Method",
-    "Candidates", "Validation Issues",
+    // Experiment columns
+    "Arm", "Input Entity", "Resolved Name", "Entity Type", "Identifier", "Status",
+    "Eval Count", "Tokens/s", "Processing Time (s)", "Validation Issues",
+    // Legacy ECO-ID columns (can be added back later)
+    "Refined Entity Name", "Confidence Score", "Resolution Category", "Error Taxonomy",
+    "Verification Status", "Verification Method", "Candidates",
     "Pathways", "Function", "Cellular Component",
     "Ontology ID", "Ontology Term",
     "PubChem CID", "ChEMBL ID", "KEGG", "UniProt", "RefSeq", "Ensembl", "InterPro",
     "InChIKey", "SMILES",
-    "PubChem Link", "ChEMBL Link", "KEGG Link", "UniProt Link",
-    "Processing Time (s)"
+    "PubChem Link", "ChEMBL Link", "KEGG Link", "UniProt Link"
   ];
 
   const csvRows: string[] = [];
