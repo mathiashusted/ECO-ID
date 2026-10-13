@@ -573,7 +573,7 @@ const App: React.FC = () => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 const content = e.target?.result as string;
-                const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+                const lines = content.split(/\r?\n/).filter(line => line.length > 0);
                 setEntityList(lines);
                 setFileName(file.name);
                 setTextAreaContent('');
@@ -588,7 +588,7 @@ const App: React.FC = () => {
         setIsDemoMode(false);
         const content = event.target.value;
         setTextAreaContent(content);
-        const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        const lines = content.split(/\r?\n/).filter(line => line.length > 0);
         setEntityList(lines);
         if (lines.length > 0) setFileName('');
     };
@@ -667,8 +667,13 @@ const App: React.FC = () => {
             // Abstentions count as unresolved here
             "Validation Issues": apiResponse.status === "abstain" ? "LLM abstained" : "",
             "Processing Time (s)": procTime,
-            "Eval Count": apiResponse.eval_count,
-            "Tokens/s": apiResponse.tokens_per_second,
+            prompt_eval_count: apiResponse.prompt_eval_count,
+            prompt_eval_duration: apiResponse.prompt_eval_duration,
+            eval_count: apiResponse.eval_count,
+            eval_duration: apiResponse.eval_duration,
+            total_duration: apiResponse.total_duration,
+            load_duration: apiResponse.load_duration,
+            message: apiResponse.message,
         } as EntityResult];
     };
 

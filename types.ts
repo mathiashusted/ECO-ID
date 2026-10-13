@@ -16,7 +16,18 @@ export type ApiProvider =
   | "phi4-mini:3.8b"
   | "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S";
 
-export interface EntityResult {
+// Raw Ollama response metrics (durations in nanosecs)
+export interface OllamaStats {
+  prompt_eval_count?: number;
+  prompt_eval_duration?: number;
+  eval_count?: number;
+  eval_duration?: number;
+  total_duration?: number;
+  load_duration?: number;
+  message?: string;
+}
+
+export interface EntityResult extends OllamaStats {
   "Input Entity": string;
   "Refined Entity Name": string;
   "Entity Type": string;
@@ -52,18 +63,13 @@ export interface EntityResult {
   "KEGG Link"?: string;
   "UniProt Link"?: string;
   "Processing Time (s)"?: number;
-  "Eval Count"?: number;
-  "Tokens/s"?: number;
 }
 
-export interface GeminiApiResponse {
+export interface GeminiApiResponse extends OllamaStats {
   normalized_name: string;
   entity_type: 'chemical' | 'gene' | '';
   status: 'resolved' | 'abstain';
   identifier?: string; // Only for arm A
-  // Only set for Ollama calls
-  eval_count?: number;
-  tokens_per_second?: number;
 }
 
 export interface SessionState {

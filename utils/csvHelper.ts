@@ -9,7 +9,8 @@ export const generateAndDownloadCsv = (data: EntityResult[], filename: string): 
   const headers: (keyof EntityResult)[] = [
     // Experiment columns
     "Arm", "Input Entity", "Resolved Name", "Entity Type", "Identifier", "Status",
-    "Eval Count", "Tokens/s", "Processing Time (s)", "Validation Issues",
+    "Processing Time (s)", "Validation Issues",
+    "prompt_eval_count", "prompt_eval_duration", "eval_count", "eval_duration", "total_duration", "load_duration", "message",
     // Legacy ECO-ID columns (can be added back later)
     "Refined Entity Name", "Confidence Score", "Resolution Category", "Error Taxonomy",
     "Verification Status", "Verification Method", "Candidates",

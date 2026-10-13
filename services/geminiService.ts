@@ -308,7 +308,7 @@ export const fetchEntityInfo = async (
                 model: provider,
                 stream: false,
                 format: toJsonSchema(getResponseSchema(ontology)),
-                options: { temperature: 0, seed: 100, num_ctx: 4096 }, // The option parameters are hard coded for test runs
+                options: { temperature: 0, seed: 100, num_ctx: 4096, num_gpu: 0, num_thread: 10 }, // The option parameters are hard coded for test runs. GPU IS TURNED OFF FOR THIS
                 messages: [{ role: "user", content: prompt }],
                 think: false,
                 keep_alive: "30m"
@@ -323,10 +323,10 @@ export const fetchEntityInfo = async (
         const data = await response.json();
 
         const parsed = parseMaybeJson(data?.message?.content || data?.response || "{}");
+        const { prompt_eval_count, prompt_eval_duration, eval_count, eval_duration, total_duration, load_duration } = data;
         return {
             ...normalizeApiResponse(parsed),
-            eval_count: data.eval_count,
-            tokens_per_second: data.eval_count / (data.eval_duration / 1e9),
+            prompt_eval_count, prompt_eval_duration, eval_count, eval_duration, total_duration, load_duration, message: JSON.stringify(data.message),
         };
     }
 
@@ -349,7 +349,9 @@ export const fetchEntityInfo = async (
         }
 
         const parsed = await response.json();
-        return normalizeApiResponse(parsed);
+        // Only the Gemini proxy sends these out
+        const { prompt_eval_count, eval_count, total_duration, message } = parsed;
+        return { ...normalizeApiResponse(parsed), prompt_eval_count, eval_count, total_duration, message };
     } catch (error) {
         console.error(`Error calling ${provider} via proxy:`, error);
         throw error;

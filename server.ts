@@ -181,25 +181,27 @@ async function startServer() {
           responseSchema: req.body.responseSchema,
           temperature: TEMPERATURE,
           seed: SEED,
+          thinkingConfig: { thinkingLevel: "MINIMAL" }, // Set the thinking level to minimal
         };
 
-        // Resilient calling strategy: 
-        // 1. Candidate models: I changed this to Gemini 3.6 Flash which is available freely as an API, falling back to gemini-flash-latest instead of older, potentially non-existent models
-        // 2. Exponential backoff retry loop per candidate model
-        const candidateModels = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash-lite"];
+        // Gemini 3.6 Flash is the model we will use
+        const candidateModels = ["gemini-3.6-flash"];
         const maxRetries = 3;
         let lastError: any = null;
         let response: any = null;
+        let totalDuration = 0;
 
         for (const modelToCall of candidateModels) {
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
               console.log(`[Gemini Resiliency Engine] Calling model ${modelToCall} (Attempt ${attempt}/${maxRetries})...`);
+              const startNs = process.hrtime.bigint();
               response = await ai.models.generateContent({
                 model: modelToCall,
                 contents: prompt,
                 config: { ...config, abortSignal: AbortSignal.timeout(30000) },
               });
+              totalDuration = Number(process.hrtime.bigint() - startNs);
               
               if (response && response.text) {
                 console.log(`[Gemini Resiliency Engine] Successfully generated content using ${modelToCall} on attempt ${attempt}.`);
@@ -291,7 +293,13 @@ async function startServer() {
         }
 
         const jsonText = response.text.trim();
-        return res.json(JSON.parse(jsonText));
+        return res.json({
+          ...JSON.parse(jsonText),
+          prompt_eval_count: response.usageMetadata?.promptTokenCount,
+          eval_count: response.usageMetadata?.candidatesTokenCount,
+          total_duration: totalDuration,
+          message: response.text,
+        });
       }
       if (provider === "OpenAI") {
         const key = getValidApiKey("OpenAI", apiKey);
