@@ -34,7 +34,7 @@ type AiMode = 'cloud' | 'local';
 
 const AI_PROVIDERS: Record<AiMode, ApiProvider[]> = {
     cloud: ["Google Gemini", "OpenAI", "Groq", "Anthropic", "Cohere", "Mistral AI", "Perplexity", "Together AI"],
-    local: ["gemma4:e2b", "gemma4:e4b", "phi4-mini:3.8b", "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S"],
+    local: ["gemma4:e2b", "gemma4:e4b", "phi4-mini:3.8b", "qwen3.5:4b"],
 };
 
 type LocalModelStatus = 'idle' | 'checking' | 'available' | 'missing' | 'offline';

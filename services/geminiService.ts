@@ -3,7 +3,7 @@ import { GeminiApiResponse, ApiProvider, OntologyType } from "../types";
 
 // Thesis experiment arm - will be changed directly from here and affects the prompt as well as the schema:
 // A = LLM-as-DB, B = hybrid
-export const EXPERIMENT_ARM = "B" as "A" | "B";
+export const EXPERIMENT_ARM = "A" as "A" | "B";
 
 // --- Gemini-Specific Implementation ---
 
@@ -261,7 +261,7 @@ const createPrompt = (
     `
 };
 
-const LOCAL_OLLAMA_MODELS = new Set(["gemma4:e2b", "gemma4:e4b", "phi4-mini:3.8b", "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S"]);
+const LOCAL_OLLAMA_MODELS = new Set(["gemma4:e2b", "gemma4:e4b", "phi4-mini:3.8b", "qwen3.5:4b"]);
 
 // Ollama's structured outputs want a plain JSON Schema (lowercase "type" strings),
 // while getResponseSchema() returns Gemini's dialect (Type.OBJECT, Type.STRING, ...).

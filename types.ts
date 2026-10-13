@@ -14,7 +14,7 @@ export type ApiProvider =
   | "gemma4:e2b"
   | "gemma4:e4b"
   | "phi4-mini:3.8b"
-  | "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_S";
+  | "qwen3.5:4b";
 
 // Raw Ollama response metrics (durations in nanosecs)
 export interface OllamaStats {
